@@ -36,6 +36,79 @@ See the [project documentation](https://docs.blockscout.com/) for instructions:
 - [ENV variables](https://docs.blockscout.com/setup/env-variables)
 - [Configuration options](https://docs.blockscout.com/for-developers/configuration-options)
 
+## How to run on Arch Linux
+
+1. Install required packages
+
+    pacman -S autoconf automake docker docker-compose elixir \
+              erlang-asn1 erlang-os_mon erlang-parsetools erlang-public_key \
+              erlang-ssl erlang-syntax_tools erlang-xmerl \
+              gcc gmp inotify-tools libtool make postgresql yarn
+    yay -S nvm
+
+2. Add following to /etc/hosts
+
+    127.0.0.1  blockscout blockscout.local
+    ::1        blockscout blockscout.local
+
+3. Run and configure PostgreSQL
+
+    systemctl enable posgresql
+    systemctl start posgresql
+    psql -U postgres -p 5432 -h localhost
+    > CREATE USER blockscout WITH PASSWORD '12345';
+    > CREATE DATABASE blockscout WITH OWNER=blockscout;
+
+4. Build and configure backend
+
+    source .env
+    mix do deps.get, local.rebar --force, deps.compile
+    mix phx.gen.secret
+    sed -i 's|@SECRET@|<secret-generated-above>|' .env
+    source .env
+    mix compile
+    mix do ecto.create, ecto.migrate
+
+5. Build assets and enable https
+
+    cd apps/block_scout_web/assets
+    npm ci
+    node_modules/webpack/bin/webpack.js --mode production
+    cd ../../explorer
+    npm ci
+    cd ../..
+    mix phx.digest
+    cd apps/block_scout_web
+    mix phx.gen.cert blockscout blockscout.local
+    cd ../..
+
+6. Run Rust microservices
+
+    docker compose -f docker-compose/microservices.yml up -d
+
+   Check following URLs to make sure that microservices are running correctly:
+
+   - stats: <http://localhost:8080/health?service=>
+   - visualizer: <http://localhost:8081/health>
+   - verifier: <http://localhost:8082/api/v2/verifier/solidity/versions>
+   - sig-provider: <http://localhost:8083/health?service=>
+
+7. Run backend
+
+    mix phx.server
+
+   Check <http://localhost:3001/api/>
+
+8. Run frontend
+
+    cd ../blockscout-fe
+    source .env
+    nvm use 22.11.0
+    yarn
+    yarn dev
+
+   Open <http://localhost:3000/>
+
 ## Acknowledgements
 
 We would like to thank the EthPrize foundation for their funding support.
