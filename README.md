@@ -39,28 +39,28 @@ See the [project documentation](https://docs.blockscout.com/) for instructions:
 ## How to run on Arch Linux
 
 1. Install required packages
-
+```bash
     pacman -S autoconf automake docker docker-compose elixir \
               erlang-asn1 erlang-os_mon erlang-parsetools erlang-public_key \
               erlang-ssl erlang-syntax_tools erlang-xmerl \
               gcc gmp inotify-tools libtool make postgresql yarn
     yay -S nvm
-
+```
 2. Add following to /etc/hosts
-
+```
     127.0.0.1  blockscout blockscout.local
     ::1        blockscout blockscout.local
-
+```
 3. Run and configure PostgreSQL
-
+```bash
     systemctl enable posgresql
     systemctl start posgresql
     psql -U postgres -p 5432 -h localhost
     > CREATE USER blockscout WITH PASSWORD '12345';
     > CREATE DATABASE blockscout WITH OWNER=blockscout;
-
+```
 4. Build and configure backend
-
+```bash
     source .env
     mix do deps.get, local.rebar --force, deps.compile
     mix phx.gen.secret
@@ -68,9 +68,9 @@ See the [project documentation](https://docs.blockscout.com/) for instructions:
     source .env
     mix compile
     mix do ecto.create, ecto.migrate
-
+```
 5. Build assets and enable https
-
+```bash
     cd apps/block_scout_web/assets
     npm ci
     node_modules/webpack/bin/webpack.js --mode production
@@ -81,11 +81,11 @@ See the [project documentation](https://docs.blockscout.com/) for instructions:
     cd apps/block_scout_web
     mix phx.gen.cert blockscout blockscout.local
     cd ../..
-
+```
 6. Run Rust microservices
-
+```
     docker compose -f docker-compose/microservices.yml up -d
-
+```
    Check following URLs to make sure that microservices are running correctly:
 
    - stats: <http://localhost:8080/health?service=>
@@ -100,13 +100,13 @@ See the [project documentation](https://docs.blockscout.com/) for instructions:
    Check <http://localhost:3001/api/>
 
 8. Run frontend
-
+```bash
     cd ../blockscout-fe
     source .env
     nvm use 22.11.0
     yarn
     yarn dev
-
+```
    Open <http://localhost:3000/>
 
 ## Acknowledgements
