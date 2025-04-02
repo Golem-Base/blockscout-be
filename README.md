@@ -36,6 +36,22 @@ See the [project documentation](https://docs.blockscout.com/) for instructions:
 - [ENV variables](https://docs.blockscout.com/setup/env-variables)
 - [Configuration options](https://docs.blockscout.com/for-developers/configuration-options)
 
+## How to run whole Golem Base using docker compose
+
+1. Make sure you have all the necessary repositories cloned:
+
+   - op-geth
+   - blockscout-be
+   - blockscout-fe
+   - blockscout-rs
+
+2. Run docker compose
+
+   ```bash
+   cd golembase
+   docker compose up -d
+   ```
+
 ## How to run on Arch Linux
 
 1. Install required packages
