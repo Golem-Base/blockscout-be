@@ -87,7 +87,7 @@ defmodule Explorer.Chain.Log do
 
   alias ABI.{Event, FunctionSelector}
   alias Explorer.{Chain, Repo}
-  alias Explorer.Chain.{ContractMethod, Hash, Log, TokenTransfer, Transaction}
+  alias Explorer.Chain.{Address, ContractMethod, Hash, Log, TokenTransfer, Transaction}
   alias Explorer.Chain.SmartContract.Proxy
   alias Explorer.SmartContract.SigProviderInterface
 
@@ -283,7 +283,7 @@ defmodule Explorer.Chain.Log do
     if !is_nil(address_hash) && Map.has_key?(acc, address_hash) do
       acc
     else
-      case Chain.find_contract_address(address_hash, address_options, false) do
+      case Chain.find_contract_address(address_hash, address_options) do
         {:ok, %{smart_contract: smart_contract}} ->
           full_abi = Proxy.combine_proxy_implementation_abi(smart_contract, db_options)
           Map.put(acc, address_hash, full_abi)
@@ -330,7 +330,7 @@ defmodule Explorer.Chain.Log do
     if Enum.empty?(address_hashes_without_abi) do
       address_hash_abi_map
     else
-      case Chain.find_contract_addresses(address_hashes_without_abi, address_options) do
+      case Address.find_contract_addresses(address_hashes_without_abi, address_options) do
         {:ok, addresses} when is_list(addresses) ->
           update_address_hash_abi_map_with_implementations_abi(address_hash_abi_map, addresses, db_options)
 
@@ -641,18 +641,54 @@ defmodule Explorer.Chain.Log do
   def stream_unfetched_weth_token_transfers(each_fun) do
     env = Application.get_env(:explorer, Explorer.Chain.TokenTransfer)
 
-    __MODULE__
+    base_query = from(log in __MODULE__, as: :log)
+
+    base_query
     |> where([log], log.address_hash in ^env[:whitelisted_weth_contracts])
-    |> where(
-      [log],
-      log.first_topic == ^TokenTransfer.weth_deposit_signature() or
-        log.first_topic == ^TokenTransfer.weth_withdrawal_signature()
-    )
+    |> where(^first_topic_is_deposit_or_withdrawal_signature())
     |> join(:left, [log], tt in TokenTransfer,
       on: log.block_hash == tt.block_hash and log.transaction_hash == tt.transaction_hash and log.index == tt.log_index
     )
     |> where([log, tt], is_nil(tt.transaction_hash))
     |> select([log], log)
     |> Repo.stream_each(each_fun)
+  end
+
+  @doc """
+  Generates a dynamic query condition to check if the `first_topic` of a log entry
+  matches either the WETH deposit or withdrawal signature.
+
+  This function is typically used to filter logs where the first topic corresponds
+  to specific token transfer events, such as WETH deposits or withdrawals.
+
+  ## Returns
+
+  - An `Ecto.Query.dynamic()` expression that can be used in Ecto queries.
+  """
+  @spec first_topic_is_deposit_or_withdrawal_signature() :: Ecto.Query.dynamic_expr()
+  def first_topic_is_deposit_or_withdrawal_signature do
+    dynamic(
+      [log: log],
+      log.first_topic in [^TokenTransfer.weth_deposit_signature(), ^TokenTransfer.weth_withdrawal_signature()]
+    )
+  end
+
+  @doc """
+  Generates a dynamic query condition to filter logs where the `first_topic`
+  is neither the WETH deposit signature nor the WETH withdrawal signature.
+
+  This function is useful for excluding specific types of token transfer events
+  from query results.
+
+  ## Returns
+
+  - An `Ecto.Query.dynamic/1` expression that can be used in Ecto queries.
+  """
+  @spec first_topic_is_not_deposit_or_withdrawal_signature() :: Ecto.Query.dynamic_expr()
+  def first_topic_is_not_deposit_or_withdrawal_signature do
+    dynamic(
+      [log: log],
+      log.first_topic not in [^TokenTransfer.weth_deposit_signature(), ^TokenTransfer.weth_withdrawal_signature()]
+    )
   end
 end

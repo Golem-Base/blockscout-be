@@ -37,6 +37,8 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
           | {:ok, any()}
   def interpret(transaction_or_map, request_builder \\ &prepare_request_body/1) do
     with {:enabled, true} <- {:enabled, enabled?()},
+         {:success_transaction, true} <-
+           {:success_transaction, success_transaction_or_user_op?(transaction_or_map)},
          {:cache, :no_cached_data} <-
            {:cache, try_get_cached_value(get_hash(transaction_or_map))} do
       url = interpret_url()
@@ -46,6 +48,7 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
       http_post_request(url, body)
     else
       {:cache, {:ok, _response} = result} -> result
+      {:success_transaction, false} -> {:ok, nil}
       {:enabled, false} -> {{:error, :disabled}, 403}
     end
   end
@@ -317,15 +320,12 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
       "value" =>
         address_hash_string
         |> Chain.hash_to_address(
-          [
-            necessity_by_association: %{
-              :names => :optional,
-              :smart_contract => :optional,
-              proxy_implementations_association() => :optional
-            },
-            api?: true
-          ],
-          false
+          necessity_by_association: %{
+            :names => :optional,
+            :smart_contract => :optional,
+            proxy_implementations_association() => :optional
+          },
+          api?: true
         )
         |> address_from_db()
         |> Map.merge(value)
@@ -412,4 +412,8 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
 
   defp get_hash(%{hash: hash}), do: hash
   defp get_hash(%{"hash" => hash}), do: hash
+
+  defp success_transaction_or_user_op?(%Transaction{status: :ok}), do: true
+  defp success_transaction_or_user_op?(%{"hash" => _hash}), do: true
+  defp success_transaction_or_user_op?(_), do: false
 end
