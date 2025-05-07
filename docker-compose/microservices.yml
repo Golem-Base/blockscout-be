@@ -5,8 +5,6 @@ services:
     extends:
       file: ./services/visualizer.yml
       service: visualizer
-    ports:
-      - 8081:8050
 
   sig-provider:
     extends:
@@ -14,6 +12,7 @@ services:
       service: sig-provider
     ports:
       - 8083:8050
+    
 
   sc-verifier:
     extends:
@@ -22,14 +21,37 @@ services:
     ports:
       - 8082:8050
 
+  stats-db-init:
+    extends:
+      file: ./services/stats.yml
+      service: stats-db-init
+
+  stats-db:
+    depends_on:
+      stats-db-init:
+        condition: service_completed_successfully
+    extends:
+      file: ./services/stats.yml
+      service: stats-db
+
   stats:
+    depends_on:
+      - stats-db
     extends:
       file: ./services/stats.yml
       service: stats
-    ports:
-      - 8080:8050
 
   user-ops-indexer:
     extends:
       file: ./services/user-ops-indexer.yml
       service: user-ops-indexer
+
+  proxy:
+    depends_on:
+      - visualizer
+      - stats
+    extends:
+      file: ./services/nginx.yml
+      service: proxy
+    volumes:
+      - "./proxy/microservices.conf.template:/etc/nginx/templates/default.conf.template"
