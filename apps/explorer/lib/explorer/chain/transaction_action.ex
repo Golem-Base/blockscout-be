@@ -45,7 +45,8 @@ defmodule Explorer.Chain.TransactionAction do
         :flash_loan,
         :enable_collateral,
         :disable_collateral,
-        :liquidation_call
+        :liquidation_call,
+        :golembase_entity_created
       ],
       null: false
     )

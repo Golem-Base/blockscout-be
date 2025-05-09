@@ -21,6 +21,7 @@ defmodule Indexer.Transform.TransactionActions do
   @polygon 137
   @base_mainnet 8453
   @base_goerli 84531
+  @golembase 4919
   # @gnosis 100
 
   @uniswap_v3_factory_abi [
@@ -119,6 +120,9 @@ defmodule Indexer.Transform.TransactionActions do
   # 32-byte signature of the event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick);
   @uniswap_v3_swap_event "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
 
+  # 32-byte signature of the event GolemBaseStorageEntityCreated(uint256)
+  @golembase_entity_created "0xce4b4ad6891d716d0b1fba2b4aeb05ec20edadb01df512263d0dde423736bbb9"
+
   # max number of token decimals
   @decimals_max 0xFF
 
@@ -142,6 +146,7 @@ defmodule Indexer.Transform.TransactionActions do
 
       actions = parse_aave_v3(logs, actions, protocols_to_rewrite, chain_id)
       actions = parse_uniswap_v3(logs, actions, protocols_to_rewrite, chain_id)
+      actions = parse_golembase(logs, actions, protocols_to_rewrite, chain_id)
 
       %{transaction_actions: actions}
     else
@@ -381,6 +386,72 @@ defmodule Indexer.Transform.TransactionActions do
           }
         ]
     end
+  end
+
+  defp golembase(logs_grouped, actions, chain_id) do
+    # iterate for each transaction
+    Enum.reduce(logs_grouped, actions, fn {transaction_hash, transaction_logs}, actions_acc ->
+      # go through other actions
+      Enum.reduce(transaction_logs, [], fn log, acc ->
+        acc ++ golembase_handle_action(log, chain_id)
+      end)
+    end)
+  end
+
+  defp golembase_handle_action(log, chain_id) do
+    first_topic = sanitize_first_topic(log.first_topic)
+    case first_topic do
+      @golembase_entity_created ->
+        # this is GolemBaseStorageEntityCreated event
+        golembase_handle_created_event(log, chain_id)
+
+      _ ->
+        []
+    end
+  end
+
+  defp golembase_handle_created_event(log, chain_id) do
+    [note_id] = decode_data(log.data, [{:uint, 256}])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          note_id: note_id
+        },
+        type: "golembase_entity_created",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp parse_golembase(logs, actions, protocols_to_rewrite, chain_id) do
+    if chain_id == @golembase and
+         (is_nil(protocols_to_rewrite) or Enum.empty?(protocols_to_rewrite) or
+            Enum.member?(protocols_to_rewrite, "golembase")) do
+
+      logs
+      |> golembase_filter_logs()
+      |> logs_group_by_transactions()
+      |> golembase(actions, chain_id)
+    else
+      actions
+    end
+  end
+
+  defp golembase_filter_logs(logs) do
+    logs
+    |> Enum.filter(fn log ->
+      first_topic = sanitize_first_topic(log.first_topic)
+
+      Enum.member?(
+        [
+          @golembase_entity_created
+        ],
+        first_topic
+      )
+    end)
   end
 
   defp uniswap(logs_grouped, actions, chain_id, uniswap_v3_positions_nft) do
