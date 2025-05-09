@@ -34,7 +34,7 @@ services:
     command: >
       --dev
       --http
-      --http.api 'eth,web3,net,debug,golembase'
+      --http.api 'eth,web3,net,debug,txpool,golembase'
       --verbosity 3
       --http.addr '0.0.0.0'
       --http.port 8545

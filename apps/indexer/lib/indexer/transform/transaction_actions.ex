@@ -21,7 +21,7 @@ defmodule Indexer.Transform.TransactionActions do
   @polygon 137
   @base_mainnet 8453
   @base_goerli 84531
-  @golembase 4919
+  @golembase 1337
   # @gnosis 100
 
   @uniswap_v3_factory_abi [
@@ -120,7 +120,7 @@ defmodule Indexer.Transform.TransactionActions do
   # 32-byte signature of the event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick);
   @uniswap_v3_swap_event "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
 
-  # 32-byte signature of the event GolemBaseStorageEntityCreated(uint256)
+  # 32-byte signature of the event GolemBaseStorageEntityCreated(bytes32 entityKey, uint256 expirationBlock)
   @golembase_entity_created "0xce4b4ad6891d716d0b1fba2b4aeb05ec20edadb01df512263d0dde423736bbb9"
 
   # max number of token decimals
@@ -144,9 +144,20 @@ defmodule Indexer.Transform.TransactionActions do
       # create tokens cache if not exists
       TransactionActionTokensData.create_cache_table()
 
+      Logger.info([
+        "GBASE TransactionActions.parse called, protocols=",
+        to_string(protocols_to_rewrite),
+        ", chain_id=",
+        to_string(chain_id),
+        ", logs=",
+        inspect(logs)
+      ])
+
       actions = parse_aave_v3(logs, actions, protocols_to_rewrite, chain_id)
       actions = parse_uniswap_v3(logs, actions, protocols_to_rewrite, chain_id)
       actions = parse_golembase(logs, actions, protocols_to_rewrite, chain_id)
+
+      Logger.info(["GBASE actions=", inspect(actions)])
 
       %{transaction_actions: actions}
     else
@@ -388,37 +399,42 @@ defmodule Indexer.Transform.TransactionActions do
     end
   end
 
-  defp golembase(logs_grouped, actions, chain_id) do
+  defp golembase(logs_grouped, actions) do
+    Logger.info(["GBASE golembase logs_grouped=", inspect(logs_grouped)])
     # iterate for each transaction
     Enum.reduce(logs_grouped, actions, fn {transaction_hash, transaction_logs}, actions_acc ->
       # go through other actions
-      Enum.reduce(transaction_logs, [], fn log, acc ->
-        acc ++ golembase_handle_action(log, chain_id)
+      Enum.reduce(transaction_logs, actions_acc, fn log, acc ->
+        acc ++ golembase_handle_action(log)
       end)
     end)
   end
 
-  defp golembase_handle_action(log, chain_id) do
+  defp golembase_handle_action(log) do
     first_topic = sanitize_first_topic(log.first_topic)
+    Logger.info(["GBASE golembase_handle_action first_topic=", to_string(first_topic)])
     case first_topic do
       @golembase_entity_created ->
         # this is GolemBaseStorageEntityCreated event
-        golembase_handle_created_event(log, chain_id)
+        golembase_handle_created_event(log)
 
       _ ->
         []
     end
   end
 
-  defp golembase_handle_created_event(log, chain_id) do
-    [note_id] = decode_data(log.data, [{:uint, 256}])
+  defp golembase_handle_created_event(log) do
+    entity_id = log.second_topic
+    ttl = 42 #decode_data(log.data, [{:uint, 256}]) <- does not work
+    Logger.info(["GBASE golembase_handle_created_event note_id=", entity_id, ", ttl=", ttl])
 
     [
       %{
         hash: log.transaction_hash,
         protocol: "golembase",
         data: %{
-          note_id: note_id
+          entity_id: entity_id,
+          ttl: ttl
         },
         type: "golembase_entity_created",
         log_index: log.index
@@ -427,14 +443,25 @@ defmodule Indexer.Transform.TransactionActions do
   end
 
   defp parse_golembase(logs, actions, protocols_to_rewrite, chain_id) do
+    Logger.info("GBASE parse_golembase")
+    Logger.info(
+      [
+        "GBASE parse_golembase chain_check=",
+        to_string(chain_id == @golembase),
+        ", protocols_checks=",
+        to_string((is_nil(protocols_to_rewrite) or Enum.empty?(protocols_to_rewrite) or Enum.member?(protocols_to_rewrite, "golembase")))
+      ]
+    )
+
     if chain_id == @golembase and
          (is_nil(protocols_to_rewrite) or Enum.empty?(protocols_to_rewrite) or
             Enum.member?(protocols_to_rewrite, "golembase")) do
 
+      Logger.info(["GBASE logs=", inspect(logs)])
       logs
       |> golembase_filter_logs()
       |> logs_group_by_transactions()
-      |> golembase(actions, chain_id)
+      |> golembase(actions)
     else
       actions
     end
@@ -445,12 +472,18 @@ defmodule Indexer.Transform.TransactionActions do
     |> Enum.filter(fn log ->
       first_topic = sanitize_first_topic(log.first_topic)
 
-      Enum.member?(
+      result = Enum.member?(
         [
           @golembase_entity_created
         ],
         first_topic
       )
+
+      Logger.info(fn ->
+        ["GBASE golembase_filter_logs = ", to_string(result)]
+      end)
+
+      result
     end)
   end
 
