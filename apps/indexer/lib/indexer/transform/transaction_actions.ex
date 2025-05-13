@@ -20,6 +20,7 @@ defmodule Indexer.Transform.TransactionActions do
   @polygon 137
   @base_mainnet 8453
   @base_goerli 84531
+  @golembase 1337
   # @gnosis 100
 
   @uniswap_v3_factory_abi [
@@ -118,6 +119,18 @@ defmodule Indexer.Transform.TransactionActions do
   # 32-byte signature of the event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick);
   @uniswap_v3_swap_event "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
 
+  # 32-byte signature of the event GolemBaseStorageEntityCreated(bytes32 entityKey, uint256 expirationBlock)
+  @golembase_entity_created "0xce4b4ad6891d716d0b1fba2b4aeb05ec20edadb01df512263d0dde423736bbb9"
+
+  # 32-byte signature of the event GolemBaseStorageEntityUpdated(bytes32 entityKey, uint256 newExpirationBlock)
+  @golembase_entity_updated "0xf371f40aa6932ad9dacbee236e5f3b93d478afe3934b5cfec5ea0d800a41d165"
+
+  # 32-byte signature of the event GolemBaseStorageEntityDeleted(bytes32 entityKey)
+  @golembase_entity_deleted "0x0297b0e6eaf1bc2289906a8123b8ff5b19e568a60d002d47df44f8294422af93"
+
+  # 32-byte signature of the event GolemBaseStorageEntityTTLExtended(bytes32 entityKey, uint256 oldExpirationBlock, uint256 newExpirationBlock)
+  @golembase_entity_ttl_extended "0x49f78ff301f2020db26cdf781a7e801d1015e0b851fe4117c7740837ed6724e9"
+
   # max number of token decimals
   @decimals_max 0xFF
 
@@ -141,6 +154,7 @@ defmodule Indexer.Transform.TransactionActions do
 
       actions = parse_aave_v3(logs, actions, protocols_to_rewrite, chain_id)
       actions = parse_uniswap_v3(logs, actions, protocols_to_rewrite, chain_id)
+      actions = parse_golembase(logs, actions, protocols_to_rewrite, chain_id)
 
       %{transaction_actions: actions}
     else
@@ -380,6 +394,136 @@ defmodule Indexer.Transform.TransactionActions do
           }
         ]
     end
+  end
+
+  defp golembase(logs_grouped, actions) do
+    # iterate for each transaction
+    Enum.reduce(logs_grouped, actions, fn {transaction_hash, transaction_logs}, actions_acc ->
+      # go through other actions
+      Enum.reduce(transaction_logs, actions_acc, fn log, acc ->
+        acc ++ golembase_handle_action(log)
+      end)
+    end)
+  end
+
+  defp golembase_handle_action(log) do
+    first_topic = sanitize_first_topic(log.first_topic)
+    case first_topic do
+      @golembase_entity_created ->
+        golembase_handle_created_event(log)
+      @golembase_entity_updated ->
+        golembase_handle_updated_event(log)
+      @golembase_entity_deleted ->
+        golembase_handle_deleted_event(log)
+      @golembase_entity_ttl_extended ->
+        golembase_handle_ttl_extended_event(log)
+      _ ->
+        []
+    end
+  end
+
+  defp golembase_handle_created_event(log) do
+    entity_id = log.second_topic
+    [expiration_block] = decode_data(log.data, [{:uint, 256}])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+          expiration_block: expiration_block
+        },
+        type: "golembase_entity_created",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_updated_event(log) do
+    entity_id = log.second_topic
+    [expiration_block] = decode_data(log.data, [{:uint, 256}])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+          expiration_block: expiration_block
+        },
+        type: "golembase_entity_updated",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_deleted_event(log) do
+    entity_id = log.second_topic
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+        },
+        type: "golembase_entity_deleted",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_ttl_extended_event(log) do
+    entity_id = log.second_topic
+    [old_expiration_block, new_expiration_block] = decode_data(log.data, [{:uint, 256}, {:uint, 256}])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+          old_expiration_block: old_expiration_block,
+          new_expiration_block: new_expiration_block
+        },
+        type: "golembase_entity_ttl_extended",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp parse_golembase(logs, actions, protocols_to_rewrite, chain_id) do
+    if chain_id == @golembase and
+         (is_nil(protocols_to_rewrite) or Enum.empty?(protocols_to_rewrite) or
+            Enum.member?(protocols_to_rewrite, "golembase")) do
+
+      logs
+      |> golembase_filter_logs()
+      |> logs_group_by_transactions()
+      |> golembase(actions)
+    else
+      actions
+    end
+  end
+
+  defp golembase_filter_logs(logs) do
+    logs
+    |> Enum.filter(fn log ->
+      first_topic = sanitize_first_topic(log.first_topic)
+
+      result = Enum.member?(
+        [
+          @golembase_entity_created,
+          @golembase_entity_updated,
+          @golembase_entity_deleted,
+          @golembase_entity_ttl_extended
+        ],
+        first_topic
+      )
+
+      result
+    end)
   end
 
   defp uniswap(logs_grouped, actions, chain_id, uniswap_v3_positions_nft) do
