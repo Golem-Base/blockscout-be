@@ -1,0 +1,19 @@
+services:
+  sqlite-etl:
+    container_name: golembase-sqlite-etl
+    depends_on:
+      op-geth:
+        condition: service_healthy
+    environment:
+      - RPC_ENDPOINT=http://op-geth:8545
+      - WAL_PATH=/tmp/golembase.wal
+      - DB_PATH=/tmp/golembase-sqlite
+    volumes:
+      - golembase_wal:/golembase.wal
+      - golembase_sqlite:/golembase-sqlite
+    entrypoint: []
+    command: >
+      /usr/local/bin/sqlite
+      --wal /golembase.wal
+      --db /golembase-sqlite/db
+      --rpc-endpoint http://op-geth:8545

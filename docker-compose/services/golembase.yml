@@ -1,0 +1,40 @@
+volumes:
+  golembase_wal:
+  geth_data:
+  mongodb_keyfile:
+  mongodb_data:
+  golembase_sqlite:
+
+services:
+  op-geth:
+    extends:
+      file: ./golembase/op-geth.yml
+      service: op-geth
+    build: ../../../golembase-op-geth
+
+  mongodb-setup:
+    extends:
+      file: ./golembase/mongodb.yml
+      service: mongodb-setup
+
+  mongodb:
+    extends:
+      file: ./golembase/mongodb.yml
+      service: mongodb
+
+  mongodb-etl:
+    extends:
+      file: ./golembase/mongodb.yml
+      service: mongodb-etl
+    build: ../../../golembase-op-geth
+
+  sqlite-etl:
+    extends:
+      file: ./golembase/sqlite.yml
+      service: sqlite-etl
+    build: ../../../golembase-op-geth
+
+  rpcplorer:
+    extends:
+      file: ./golembase/rpcplorer.yml
+      service: rpcplorer
