@@ -123,6 +123,15 @@ defmodule Indexer.Transform.TransactionActions do
   # 32-byte signature of the event GolemBaseStorageEntityCreated(bytes32 entityKey, uint256 expirationBlock)
   @golembase_entity_created "0xce4b4ad6891d716d0b1fba2b4aeb05ec20edadb01df512263d0dde423736bbb9"
 
+  # 32-byte signature of the event GolemBaseStorageEntityUpdated(bytes32 entityKey, uint256 newExpirationBlock)
+  @golembase_entity_updated "0xf371f40aa6932ad9dacbee236e5f3b93d478afe3934b5cfec5ea0d800a41d165"
+
+  # 32-byte signature of the event GolemBaseStorageEntityDeleted(bytes32 entityKey)
+  @golembase_entity_deleted "0x0297b0e6eaf1bc2289906a8123b8ff5b19e568a60d002d47df44f8294422af93"
+
+  # 32-byte signature of the event GolemBaseStorageEntityTTLExtended(bytes32 entityKey, uint256 oldExpirationBlock, uint256 newExpirationBlock)
+  @golembase_entity_ttl_extended "0x49f78ff301f2020db26cdf781a7e801d1015e0b851fe4117c7740837ed6724e9"
+
   # max number of token decimals
   @decimals_max 0xFF
 
@@ -415,9 +424,13 @@ defmodule Indexer.Transform.TransactionActions do
     Logger.info(["GBASE golembase_handle_action first_topic=", to_string(first_topic)])
     case first_topic do
       @golembase_entity_created ->
-        # this is GolemBaseStorageEntityCreated event
         golembase_handle_created_event(log)
-
+      @golembase_entity_updated ->
+        golembase_handle_updated_event(log)
+      @golembase_entity_deleted ->
+        golembase_handle_deleted_event(log)
+      @golembase_entity_ttl_extended ->
+        golembase_handle_ttl_extended_event(log)
       _ ->
         []
     end
@@ -425,8 +438,8 @@ defmodule Indexer.Transform.TransactionActions do
 
   defp golembase_handle_created_event(log) do
     entity_id = log.second_topic
-    ttl = 42 #decode_data(log.data, [{:uint, 256}]) <- does not work
-    Logger.info(["GBASE golembase_handle_created_event note_id=", entity_id, ", ttl=", ttl])
+    expiration_block = 42 #decode_data(log.data, [{:uint, 256}]) <- does not work
+    Logger.info(["GBASE golembase_handle_created_event note_id=", entity_id, ", expiration_block=", expiration_block])
 
     [
       %{
@@ -434,9 +447,66 @@ defmodule Indexer.Transform.TransactionActions do
         protocol: "golembase",
         data: %{
           entity_id: entity_id,
-          ttl: ttl
+          expiration_block: expiration_block
         },
         type: "golembase_entity_created",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_updated_event(log) do
+    entity_id = log.second_topic
+    expiration_block = 42 #decode_data(log.data, [{:uint, 256}]) <- does not work
+    Logger.info(["GBASE golembase_handle_updated note_id=", entity_id, ", expiration_block=", expiration_block])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+          expiration_block: expiration_block
+        },
+        type: "golembase_entity_updated",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_deleted_event(log) do
+    entity_id = log.second_topic
+    Logger.info(["GBASE golembase_handle_deleted note_id=", entity_id])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+        },
+        type: "golembase_entity_deleted",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_ttl_extended_event(log) do
+    entity_id = log.second_topic
+    old_expiration_block = 42 #decode_data(log.data, [{:uint, 256}]) <- does not work
+    new_expiration_block = 644 #decode_data(log.data, [{:uint, 256}]) <- does not work
+    Logger.info(["GBASE golembase_handle_ttl_extended note_id=", entity_id])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+          old_expiration_block: old_expiration_block,
+          new_expiration_block: new_expiration_block
+        },
+        type: "golembase_entity_ttl_extended",
         log_index: log.index
       }
     ]
@@ -474,7 +544,10 @@ defmodule Indexer.Transform.TransactionActions do
 
       result = Enum.member?(
         [
-          @golembase_entity_created
+          @golembase_entity_created,
+          @golembase_entity_updated,
+          @golembase_entity_deleted,
+          @golembase_entity_ttl_extended
         ],
         first_topic
       )

@@ -46,7 +46,10 @@ defmodule Explorer.Chain.TransactionAction do
         :enable_collateral,
         :disable_collateral,
         :liquidation_call,
-        :golembase_entity_created
+        :golembase_entity_created,
+        :golembase_entity_updated,
+        :golembase_entity_deleted,
+        :golembase_entity_ttl_extended
       ],
       null: false
     )
