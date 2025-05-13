@@ -387,7 +387,7 @@ defmodule Indexer.Transform.TransactionActions do
     end
   end
 
-  defp golembase(logs_grouped, actions, chain_id) do
+  defp golembase(logs_grouped, actions) do
     # iterate for each transaction
     Enum.reduce(logs_grouped, actions, fn {transaction_hash, transaction_logs}, actions_acc ->
       # go through other actions
@@ -409,8 +409,9 @@ defmodule Indexer.Transform.TransactionActions do
     end
   end
 
-  defp golembase_handle_created_event(log, chain_id) do
-    [note_id] = decode_data(log.data, [{:uint, 256}])
+  defp golembase_handle_created_event(log) do
+    entity_id = log.second_topic
+    [expiration_block] = decode_data(log.data, [{:uint, 256}])
 
     [
       %{
@@ -420,6 +421,59 @@ defmodule Indexer.Transform.TransactionActions do
           note_id: note_id
         },
         type: "golembase_entity_created",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_updated_event(log) do
+    entity_id = log.second_topic
+    [expiration_block] = decode_data(log.data, [{:uint, 256}])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+          expiration_block: expiration_block
+        },
+        type: "golembase_entity_updated",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_deleted_event(log) do
+    entity_id = log.second_topic
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+        },
+        type: "golembase_entity_deleted",
+        log_index: log.index
+      }
+    ]
+  end
+
+  defp golembase_handle_ttl_extended_event(log) do
+    entity_id = log.second_topic
+    [old_expiration_block, new_expiration_block] = decode_data(log.data, [{:uint, 256}, {:uint, 256}])
+
+    [
+      %{
+        hash: log.transaction_hash,
+        protocol: "golembase",
+        data: %{
+          entity_id: entity_id,
+          old_expiration_block: old_expiration_block,
+          new_expiration_block: new_expiration_block
+        },
+        type: "golembase_entity_ttl_extended",
         log_index: log.index
       }
     ]
@@ -450,6 +504,8 @@ defmodule Indexer.Transform.TransactionActions do
         ],
         first_topic
       )
+
+      result
     end)
   end
 
