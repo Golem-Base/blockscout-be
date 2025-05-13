@@ -153,20 +153,9 @@ defmodule Indexer.Transform.TransactionActions do
       # create tokens cache if not exists
       TransactionActionTokensData.create_cache_table()
 
-      Logger.info([
-        "GBASE TransactionActions.parse called, protocols=",
-        to_string(protocols_to_rewrite),
-        ", chain_id=",
-        to_string(chain_id),
-        ", logs=",
-        inspect(logs)
-      ])
-
       actions = parse_aave_v3(logs, actions, protocols_to_rewrite, chain_id)
       actions = parse_uniswap_v3(logs, actions, protocols_to_rewrite, chain_id)
       actions = parse_golembase(logs, actions, protocols_to_rewrite, chain_id)
-
-      Logger.info(["GBASE actions=", inspect(actions)])
 
       %{transaction_actions: actions}
     else
@@ -409,7 +398,6 @@ defmodule Indexer.Transform.TransactionActions do
   end
 
   defp golembase(logs_grouped, actions) do
-    Logger.info(["GBASE golembase logs_grouped=", inspect(logs_grouped)])
     # iterate for each transaction
     Enum.reduce(logs_grouped, actions, fn {transaction_hash, transaction_logs}, actions_acc ->
       # go through other actions
@@ -421,7 +409,6 @@ defmodule Indexer.Transform.TransactionActions do
 
   defp golembase_handle_action(log) do
     first_topic = sanitize_first_topic(log.first_topic)
-    Logger.info(["GBASE golembase_handle_action first_topic=", to_string(first_topic)])
     case first_topic do
       @golembase_entity_created ->
         golembase_handle_created_event(log)
@@ -438,8 +425,7 @@ defmodule Indexer.Transform.TransactionActions do
 
   defp golembase_handle_created_event(log) do
     entity_id = log.second_topic
-    expiration_block = 42 #decode_data(log.data, [{:uint, 256}]) <- does not work
-    Logger.info(["GBASE golembase_handle_created_event note_id=", entity_id, ", expiration_block=", expiration_block])
+    [expiration_block] = decode_data(log.data, [{:uint, 256}])
 
     [
       %{
@@ -457,8 +443,7 @@ defmodule Indexer.Transform.TransactionActions do
 
   defp golembase_handle_updated_event(log) do
     entity_id = log.second_topic
-    expiration_block = 42 #decode_data(log.data, [{:uint, 256}]) <- does not work
-    Logger.info(["GBASE golembase_handle_updated note_id=", entity_id, ", expiration_block=", expiration_block])
+    [expiration_block] = decode_data(log.data, [{:uint, 256}])
 
     [
       %{
@@ -476,7 +461,6 @@ defmodule Indexer.Transform.TransactionActions do
 
   defp golembase_handle_deleted_event(log) do
     entity_id = log.second_topic
-    Logger.info(["GBASE golembase_handle_deleted note_id=", entity_id])
 
     [
       %{
@@ -493,9 +477,7 @@ defmodule Indexer.Transform.TransactionActions do
 
   defp golembase_handle_ttl_extended_event(log) do
     entity_id = log.second_topic
-    old_expiration_block = 42 #decode_data(log.data, [{:uint, 256}]) <- does not work
-    new_expiration_block = 644 #decode_data(log.data, [{:uint, 256}]) <- does not work
-    Logger.info(["GBASE golembase_handle_ttl_extended note_id=", entity_id])
+    [old_expiration_block, new_expiration_block] = decode_data(log.data, [{:uint, 256}, {:uint, 256}])
 
     [
       %{
@@ -513,21 +495,10 @@ defmodule Indexer.Transform.TransactionActions do
   end
 
   defp parse_golembase(logs, actions, protocols_to_rewrite, chain_id) do
-    Logger.info("GBASE parse_golembase")
-    Logger.info(
-      [
-        "GBASE parse_golembase chain_check=",
-        to_string(chain_id == @golembase),
-        ", protocols_checks=",
-        to_string((is_nil(protocols_to_rewrite) or Enum.empty?(protocols_to_rewrite) or Enum.member?(protocols_to_rewrite, "golembase")))
-      ]
-    )
-
     if chain_id == @golembase and
          (is_nil(protocols_to_rewrite) or Enum.empty?(protocols_to_rewrite) or
             Enum.member?(protocols_to_rewrite, "golembase")) do
 
-      Logger.info(["GBASE logs=", inspect(logs)])
       logs
       |> golembase_filter_logs()
       |> logs_group_by_transactions()
@@ -551,10 +522,6 @@ defmodule Indexer.Transform.TransactionActions do
         ],
         first_topic
       )
-
-      Logger.info(fn ->
-        ["GBASE golembase_filter_logs = ", to_string(result)]
-      end)
 
       result
     end)
