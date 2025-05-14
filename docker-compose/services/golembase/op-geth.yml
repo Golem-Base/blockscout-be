@@ -1,0 +1,26 @@
+services:
+  op-geth:
+    container_name: golembase-op-geth
+    ports:
+      - 8545:8545
+    volumes:
+      - golembase_wal:/golembase.wal
+      - geth_data:/geth_data
+    command: >
+      --dev
+      --http
+      --http.api 'eth,web3,net,debug,txpool,golembase'
+      --verbosity 3
+      --http.addr '0.0.0.0'
+      --http.port 8545
+      --http.corsdomain '*'
+      --http.vhosts '*'
+      --ws
+      --ws.addr '0.0.0.0'
+      --ws.port 8545
+      --golembase.writeaheadlog '/golembase.wal/'
+      --datadir '/geth_data'
+    healthcheck:
+      test: curl -f http://localhost:8545
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'

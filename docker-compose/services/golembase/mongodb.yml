@@ -1,0 +1,62 @@
+services:
+  mongodb-setup:
+    container_name: golembase-mongodb-setup
+    image: alpine:latest
+    volumes:
+      - mongodb_keyfile:/mongodb-keyfile
+    command: >
+      /bin/sh -c "
+      mkdir -p /mongodb-keyfile;
+      if [ ! -f /mongodb-keyfile/mongodb-keyfile ]; then
+          echo 'ThisIsA32ByteKeyForMongoDBReplSet' > /mongodb-keyfile/mongodb-keyfile;
+          chmod 400 /mongodb-keyfile/mongodb-keyfile;
+          chown 999:999 /mongodb-keyfile/mongodb-keyfile;
+      fi;
+      echo 'MongoDB keyfile initialized'
+      "
+  mongodb:
+    container_name: golembase-mongodb
+    depends_on:
+      mongodb-setup:
+        condition: service_completed_successfully
+    image : mongo:8.0.6
+    restart: on-failure
+    command: --bind_ip_all --keyFile /keyfile/mongodb-keyfile --replSet rs0 --dbpath /data/db
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+      - MONGO_REPLICA_SET_NAME=rs0
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_keyfile:/keyfile:ro
+      - mongodb_data:/data/db
+    healthcheck:
+      test: |
+         echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}) }" | mongosh "mongodb://admin:password@mongodb:27017/admin?authSource=admin"
+      interval: 10s
+      start_period: 30s
+
+  mongodb-etl:
+    container_name: golembase-mongodb-etl
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      op-geth:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=mongodb://admin:password@mongodb:27017
+      - WAL_PATH=/golembase.wal
+      - RPC_ENDPOINT=http://op-geth:8545
+      - DB_NAME=golembase
+    volumes:
+      - golembase_wal:/golembase.wal
+    entrypoint: []
+    command: >
+      /usr/local/bin/mongodb
+      --wal /golembase.wal
+      --mongo-uri mongodb://admin:password@mongodb:27017
+      --rpc-endpoint http://op-geth:8545
+      --db-name golembase
