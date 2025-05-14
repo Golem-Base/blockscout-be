@@ -95,5 +95,5 @@ make stop
 ## Running Blockscout on external chain
 
 ```bash
-ETHEREUM_JSONRPC_HTTP_URL=https://my-external-chain.io docker compose -f external-chain.yml up`
+ETHEREUM_JSONRPC_HTTP_URL=https://my-external-chain.io docker compose -f external-chain.yml up
 ````
