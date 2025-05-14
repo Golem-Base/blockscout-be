@@ -91,3 +91,9 @@ make stop
 ```
 
 ***Note***: Makefile uses the same .env files since it is running docker-compose services inside.
+
+## Running Blockscout on external chain
+
+```bash
+ETHEREUM_JSONRPC_HTTP_URL=https://my-external-chain.io docker compose -f external-chain.yml up`
+````
