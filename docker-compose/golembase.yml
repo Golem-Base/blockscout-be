@@ -40,6 +40,7 @@ services:
       dockerfile: ./docker/Dockerfile
       args:
         RELEASE_VERSION: 8.1.0
+    pull_policy: build
     volumes:
       - logs:/app/logs/
       - dets:/app/dets/
@@ -61,6 +62,7 @@ services:
       file: ./services/frontend.yml
       service: frontend
     build: ../../blockscout-fe
+    pull_policy: build
 
   stats-db-init:
     extends:

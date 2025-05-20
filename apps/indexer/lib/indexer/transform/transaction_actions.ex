@@ -20,7 +20,8 @@ defmodule Indexer.Transform.TransactionActions do
   @polygon 137
   @base_mainnet 8453
   @base_goerli 84531
-  @golembase 4919
+  # TODO: Figure out the correct Golem Base chain ID.
+  @golembase 1337
   # @gnosis 100
 
   @uniswap_v3_factory_abi [
@@ -494,6 +495,7 @@ defmodule Indexer.Transform.TransactionActions do
   end
 
   defp parse_golembase(logs, actions, protocols_to_rewrite, chain_id) do
+    Logger.info(["GOLEMBASE Transaction action: ", inspect(actions), " chain_id: ", to_string(chain_id)," expected: ", to_string(@golembase)])
     if chain_id == @golembase and
          (is_nil(protocols_to_rewrite) or Enum.empty?(protocols_to_rewrite) or
             Enum.member?(protocols_to_rewrite, "golembase")) do
