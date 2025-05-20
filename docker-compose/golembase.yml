@@ -1,0 +1,251 @@
+services:
+  redis-db:
+    extends:
+      file: ./services/redis.yml
+      service: redis-db
+    volumes:
+      - redis-data:/data
+
+  db-init:
+    extends:
+      file: ./services/db.yml
+      service: db-init
+    volumes:
+      - blockscout-db-data:/var/lib/postgresql/data
+
+  db:
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    extends:
+      file: ./services/db.yml
+      service: db
+    volumes:
+      - blockscout-db-data:/var/lib/postgresql/data
+
+  backend:
+    depends_on:
+      - db
+      - redis-db
+      - golembase-op-geth
+    extends:
+      file: ./services/backend.yml
+      service: backend
+    links:
+      - db:database
+    environment:
+        ETHEREUM_JSONRPC_VARIANT: 'geth'
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
+      args:
+        RELEASE_VERSION: 8.1.0
+    volumes:
+      - logs:/app/logs/
+      - dets:/app/dets/
+
+  visualizer:
+    extends:
+      file: ./services/visualizer.yml
+      service: visualizer
+
+  sig-provider:
+    extends:
+      file: ./services/sig-provider.yml
+      service: sig-provider
+
+  frontend:
+    depends_on:
+      - backend
+    extends:
+      file: ./services/frontend.yml
+      service: frontend
+    build: ../../blockscout-fe
+
+  stats-db-init:
+    extends:
+      file: ./services/stats.yml
+      service: stats-db-init
+    volumes:
+      - stats-db-data:/var/lib/postgresql/data
+
+  stats-db:
+    depends_on:
+      stats-db-init:
+        condition: service_completed_successfully
+    extends:
+      file: ./services/stats.yml
+      service: stats-db
+    volumes:
+      - stats-db-data:/var/lib/postgresql/data
+
+  stats:
+    depends_on:
+      - stats-db
+      - backend
+    extends:
+      file: ./services/stats.yml
+      service: stats
+
+  user-ops-indexer:
+    depends_on:
+      - db
+      - backend
+    extends:
+      file: ./services/user-ops-indexer.yml
+      service: user-ops-indexer
+
+  proxy:
+    depends_on:
+      - backend
+      - frontend
+      - stats
+    extends:
+      file: ./services/nginx.yml
+      service: proxy
+
+
+##############
+# Golem Base #
+##############
+
+  golembase-setup:
+    image: alpine:latest
+    volumes:
+      - mongodb_keyfile:/mongodb-keyfile
+    command: >
+      /bin/sh -c "
+      mkdir -p /mongodb-keyfile;
+      if [ ! -f /mongodb-keyfile/mongodb-keyfile ]; then
+          echo 'ThisIsA32ByteKeyForMongoDBReplSet' > /mongodb-keyfile/mongodb-keyfile;
+          chmod 400 /mongodb-keyfile/mongodb-keyfile;
+          chown 999:999 /mongodb-keyfile/mongodb-keyfile;
+      fi;
+      echo 'MongoDB keyfile initialized'
+      "
+
+  golembase-op-geth:
+    container_name: golembase-op-geth
+    build:
+      context: ../../golembase-op-geth
+      dockerfile: Dockerfile
+    ports:
+      - "8545:8545"
+    volumes:
+      - golembase_wal:/golembase.wal
+      - geth_data:/geth_data
+    command: >
+      --dev 
+      --http 
+      --http.api 'eth,web3,net,debug,txpool,golembase' 
+      --verbosity 3 
+      --http.addr '0.0.0.0' 
+      --http.port 8545 
+      --http.corsdomain '*' 
+      --http.vhosts '*' 
+      --ws 
+      --ws.addr '0.0.0.0' 
+      --ws.port 8545 
+      --golembase.writeaheadlog '/golembase.wal/'
+      --datadir '/geth_data'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8545"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  golembase-mongodb:
+    image : mongo:8.0.6
+    container_name: golembase-mongodb
+    hostname: mongodb
+    restart: on-failure
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+      - MONGO_REPLICA_SET_NAME=rs0
+    ports:
+      - 27017:27017
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: |
+         echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'172.17.0.1:27017'}]}) }" | mongosh "mongodb://admin:password@golembase-mongodb:27017/admin?authSource=admin"
+      interval: 10s
+      start_period: 30s
+    command: "--bind_ip_all --keyFile /keyfile/mongodb-keyfile --replSet rs0 --dbpath /data/db"
+    depends_on:
+      golembase-setup:
+        condition: service_completed_successfully
+    volumes:
+      - mongodb_keyfile:/keyfile:ro
+      - mongodb_data:/data/db
+
+  golembase-mongodb-etl:
+    build:
+      context: ../../golembase-op-geth
+      dockerfile: Dockerfile
+    depends_on:
+      golembase-mongodb:
+        condition: service_healthy
+      golembase-op-geth:
+        condition: service_healthy
+    volumes:
+      - golembase_wal:/golembase.wal
+    environment:
+      - MONGO_URI=mongodb://admin:password@golembase-mongodb:27017
+      - WAL_PATH=/golembase.wal
+      - RPC_ENDPOINT=http://golembase-op-geth:8545
+      - DB_NAME=golembase
+    entrypoint: []
+    command: >
+      /usr/local/bin/mongodb
+      --wal /golembase.wal 
+      --mongo-uri mongodb://admin:password@golembase-mongodb:27017 
+      --rpc-endpoint http://golembase-op-geth:8545 
+      --db-name golembase
+
+  golembase-sqlite-etl:
+    build:
+      context: ../../golembase-op-geth
+      dockerfile: Dockerfile
+    depends_on:
+      golembase-op-geth:
+        condition: service_healthy
+    volumes:
+      - golembase_wal:/golembase.wal
+      - golembase_sqlite:/golembase-sqlite
+    environment:
+      - RPC_ENDPOINT=http://golembase-op-geth:8545
+      - WAL_PATH=/tmp/golembase.wal
+      - DB_PATH=/tmp/golembase-sqlite
+    entrypoint: []
+    command: >
+      /usr/local/bin/sqlite
+      --wal /golembase.wal 
+      --db /golembase-sqlite/db
+      --rpc-endpoint http://golembase-op-geth:8545
+
+  golembase-rpcplorer:
+    image: dmilhdef/rpcplorer:v0.0.1
+    depends_on:
+      golembase-op-geth:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    environment:
+      - NODE_URL=http://golembase-op-geth:8545
+    restart: on-failure 
+
+volumes:
+  mongodb_keyfile:
+  mongodb_data:
+  golembase_wal:
+  golembase_sqlite:
+  geth_data:
+  logs:
+  dets:
+  blockscout-db-data:
+  redis-data:
+  stats-db-data:

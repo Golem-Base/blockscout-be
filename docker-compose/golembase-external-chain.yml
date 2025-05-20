@@ -1,0 +1,112 @@
+services:
+  redis-db:
+    extends:
+      file: ./services/redis.yml
+      service: redis-db
+    volumes:
+      - redis-data:/data
+
+  db-init:
+    extends:
+      file: ./services/db.yml
+      service: db-init
+    volumes:
+      - blockscout-db-data:/var/lib/postgresql/data
+
+  db:
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    extends:
+      file: ./services/db.yml
+      service: db
+    volumes:
+      - blockscout-db-data:/var/lib/postgresql/data
+
+  backend:
+    depends_on:
+      - db
+      - redis-db
+      - golembase-op-geth
+    extends:
+      file: ./services/backend.yml
+      service: backend
+    links:
+      - db:database
+    environment:
+        ETHEREUM_JSONRPC_VARIANT: 'geth'
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
+      args:
+        RELEASE_VERSION: 8.1.0
+    volumes:
+      - logs:/app/logs/
+      - dets:/app/dets/
+
+  visualizer:
+    extends:
+      file: ./services/visualizer.yml
+      service: visualizer
+
+  sig-provider:
+    extends:
+      file: ./services/sig-provider.yml
+      service: sig-provider
+
+  frontend:
+    depends_on:
+      - backend
+    extends:
+      file: ./services/frontend.yml
+      service: frontend
+    build: ../../blockscout-fe
+
+  stats-db-init:
+    extends:
+      file: ./services/stats.yml
+      service: stats-db-init
+    volumes:
+      - stats-db-data:/var/lib/postgresql/data
+
+  stats-db:
+    depends_on:
+      stats-db-init:
+        condition: service_completed_successfully
+    extends:
+      file: ./services/stats.yml
+      service: stats-db
+    volumes:
+      - stats-db-data:/var/lib/postgresql/data
+
+  stats:
+    depends_on:
+      - stats-db
+      - backend
+    extends:
+      file: ./services/stats.yml
+      service: stats
+
+  user-ops-indexer:
+    depends_on:
+      - db
+      - backend
+    extends:
+      file: ./services/user-ops-indexer.yml
+      service: user-ops-indexer
+
+  proxy:
+    depends_on:
+      - backend
+      - frontend
+      - stats
+    extends:
+      file: ./services/nginx.yml
+      service: proxy
+
+volumes:
+  logs:
+  dets:
+  blockscout-db-data:
+  redis-data:
+  stats-db-data:
