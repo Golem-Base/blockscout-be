@@ -22,7 +22,7 @@ defmodule Indexer.Fetcher.Optimism.DisputeGame do
 
   @fetcher_name :optimism_dispute_games
   @game_check_interval 60
-  @games_range_size 50
+  @games_range_size 3
 
   @extra_data_method_signature "0x609d3334"
   @resolved_at_method_signature "0x19effeb4"

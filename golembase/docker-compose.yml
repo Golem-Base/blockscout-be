@@ -25,7 +25,7 @@ services:
       "
 
   op-geth:
-    build: ../../op-geth
+    build: ../../../op-geth
     ports:
       - 8545:8545
     volumes:
@@ -79,7 +79,7 @@ services:
         condition: service_healthy
       op-geth:
         condition: service_healthy
-    build: ../../op-geth
+    build: ../../../op-geth
     environment:
       - MONGO_URI=mongodb://admin:password@mongodb:27017
       - WAL_PATH=/golembase.wal
@@ -99,7 +99,7 @@ services:
     depends_on:
       op-geth:
         condition: service_healthy
-    build: ../../op-geth
+    build: ../../../op-geth
     environment:
       - RPC_ENDPOINT=http://op-geth:8545
       - WAL_PATH=/tmp/golembase.wal
